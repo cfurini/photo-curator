@@ -1,7 +1,7 @@
 # photo-curator — Master Document
 
 > **Purpose**: Living baseline for the photo-curator product. AI-consumable, human-reviewed.
-> **Version**: 0.2.0 | **Last updated**: 2026-02-16
+> **Version**: 0.3.0 | **Last updated**: 2026-02-16
 
 ---
 
@@ -70,8 +70,12 @@ photo-curator --source PATH --destination PATH --discard PATH [OPTIONS]
 | `--match-strategy` | `filename-size` | `filename-size` or `content-hash` (extensible) |
 | `--dry-run` | off | Preview without changes |
 | `--verbose` / `-v` | off | DEBUG-level console output |
-| `--log-file PATH` | `photo-curator.log` | |
+| `--log-dir PATH` | `.` (cwd) | Directory for `.log` and `.json` manifest files |
 | `--exiftool-batch-size N` | `500` | Files per exiftool invocation |
+
+**Subcommands:**
+- `photo-curator [run]` — Run the curation pipeline (default)
+- `photo-curator undo <manifest.json>` — Reverse operations from a previous run
 
 ### Pipeline (5 sequential phases)
 
@@ -81,6 +85,7 @@ photo-curator --source PATH --destination PATH --discard PATH [OPTIONS]
 3. MATCH        Strategy.match_all()        → MatchResults (duplicate or new)
 4. RESOLVE      Resolver.resolve()          → FileActions (store/discard/skip)
 5. EXECUTE      Mover.execute()             → copy or move files, update counters
+6. MANIFEST     ManifestWriter.finalize()   → write JSON operations manifest
 ```
 
 ### Matching Strategy Pattern
@@ -135,13 +140,15 @@ photo-curator/
 │   ├── __main__.py          python -m entry
 │   ├── cli.py               argparse + validation + main()
 │   ├── config.py            CuratorConfig dataclass + extension constants
-│   ├── logging_setup.py     console + file logging
-│   ├── models.py            FileRecord, MatchResult, FileAction, PipelineResult, enums
+│   ├── logging_setup.py     console + timestamped file logging
+│   ├── manifest.py          JSON operations manifest writer (ManifestWriter)
+│   ├── models.py            FileRecord, MatchResult, FileAction, OperationRecord, PipelineResult, enums
 │   ├── scanner.py           recursive walk, sidecar mapping, walk_destination() helper
 │   ├── metadata.py          exiftool batch calls, date parsing
 │   ├── resolver.py          conflict resolution logic
-│   ├── mover.py             copy/move/dry-run + duplicate name resolution
-│   ├── pipeline.py          orchestrator wiring phases 1–5
+│   ├── mover.py             copy/move/dry-run + duplicate name resolution + manifest recording
+│   ├── pipeline.py          orchestrator wiring phases 1–6
+│   ├── undo.py              undo operations from a JSON manifest
 │   └── matching/
 │       ├── base.py          MatchStrategy ABC (name + build_index + match_all)
 │       ├── filename_size.py FilenameSizeStrategy
@@ -153,7 +160,9 @@ photo-curator/
     ├── test_metadata.py     10 tests (parse_date edge cases)
     ├── test_matching.py     17 tests (filename-size, content-hash, build_index, registry)
     ├── test_resolver.py      4 tests (each resolution rule)
-    ├── test_mover.py         8 tests (copy, move, dry-run, discard, skip, name collision)
+    ├── test_mover.py        10 tests (copy, move, dry-run, discard, skip, name collision, manifest)
+    ├── test_manifest.py      7 tests (ManifestWriter: write, record, config, summary, sidecars)
+    ├── test_undo.py         11 tests (copy/move undo, dry-run, edge cases, manifest validation)
     └── test_pipeline.py      7 integration tests (requires exiftool)
 ```
 
@@ -162,8 +171,9 @@ photo-curator/
 **FileRecord** (frozen): `path`, `category`, `size`, `extension`, `year`, `month`, `parent_media`
 **MatchResult** (frozen): `source`, `matched_destination`, `is_duplicate`
 **FileAction** (mutable): `source`, `action`, `destination_path`, `sidecars`, `reason`
-**PipelineResult** (mutable): `files_scanned`, `files_stored`, `files_discarded`, `files_skipped`, `files_no_date`, `errors`, `dry_run`
-**CuratorConfig** (frozen): `source`, `destination`, `discard`, `mode`, `match_strategy`, `dry_run`, `exiftool_batch_size`, `verbose`, `log_file`
+**OperationRecord** (mutable): `action`, `source`, `destination`, `source_size`, `matched_existing`, `sidecars`
+**PipelineResult** (mutable): `files_scanned`, `files_stored`, `files_discarded`, `files_skipped`, `files_no_date`, `errors`, `dry_run`, `manifest_path`
+**CuratorConfig** (frozen): `source`, `destination`, `discard`, `mode`, `match_strategy`, `dry_run`, `exiftool_batch_size`, `verbose`, `log_dir`
 
 ### Build & Test
 
@@ -171,13 +181,13 @@ photo-curator/
 cd photo-curator
 python3 -m venv venv && source venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/ -v            # 57 tests, all passing
+pytest tests/ -v            # 75+ tests, all passing
 photo-curator --help        # verify CLI
 ```
 
-### Implementation Status (v0.2.0) — Complete
+### Implementation Status (v0.3.0) — Complete
 
-All 13 modules implemented. 57 tests passing. CLI operational with dry-run, copy, move modes, and two matching strategies (filename-size, content-hash).
+All 16 modules implemented. 75+ tests passing. CLI operational with dry-run, copy, move modes, two matching strategies (filename-size, content-hash), structured JSON manifest output, and undo capability.
 
 ---
 
@@ -187,13 +197,14 @@ All 13 modules implemented. 57 tests passing. CLI operational with dry-run, copy
 
 - ~~Hash-based matching strategy~~ — `content-hash` (SHA256). Done in v0.2.
 - ~~Git init + CLAUDE.md~~ — Repo at `github.com/cfurini/photo-curator`. Done in v0.2.
+- ~~Structured logging + undo~~ — Timestamped `.log` + `.json` manifest per run. `undo` subcommand reverses operations. `--log-dir` CLI option. Done in v0.3.
 
-### Near-term (v0.3)
+### Near-term (v0.4)
 
 1. **Progress tracking** — JSON checkpoint file for resumability on large archives. Enables safe interruption and restart of multi-hour runs.
 2. **Quality-based conflict resolution** — When a duplicate is found, compare resolution, file format hierarchy (RAW > JPEG), or file size to pick the better copy. Keep the winner in archive, send the loser to discard.
 
-### Mid-term (v0.4–v0.5)
+### Mid-term (v0.5–v0.6)
 
 3. **EXIF-based matching** — Match by camera model + timestamp + dimensions. Catches duplicates across different export names.
 4. **Perceptual hashing** — pHash/dHash via `imagehash` library. Detects near-duplicates (crops, re-encodes, slight edits).
@@ -201,5 +212,4 @@ All 13 modules implemented. 57 tests passing. CLI operational with dry-run, copy
 ### Long-term
 
 5. **Parallel exiftool** — `concurrent.futures` to run multiple batches simultaneously for faster metadata extraction on large archives.
-6. **Reporting** — Generate a summary report (JSON/CSV) of all actions taken, for audit and review.
-7. **Integration with Immich/Photoprism** — Notify or sync with a photo management frontend after curation.
+6. **Integration with Immich/Photoprism** — Notify or sync with a photo management frontend after curation.

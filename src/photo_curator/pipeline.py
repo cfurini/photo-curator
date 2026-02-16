@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from photo_curator.config import CuratorConfig
+from photo_curator.manifest import ManifestWriter
 from photo_curator.matching.registry import get_strategy
 from photo_curator.metadata import MetadataExtractor
 from photo_curator.models import PipelineResult
@@ -18,13 +20,15 @@ logger = logging.getLogger(__name__)
 class Pipeline:
     """Orchestrates the full photo curation run."""
 
-    def __init__(self, config: CuratorConfig) -> None:
+    def __init__(self, config: CuratorConfig, run_id: str) -> None:
         self.config = config
+        self.run_id = run_id
         self.scanner = Scanner(config)
         self.metadata = MetadataExtractor(batch_size=config.exiftool_batch_size)
         self.strategy = get_strategy(config.match_strategy)
         self.resolver = Resolver(config)
-        self.mover = Mover(config)
+        self.manifest = ManifestWriter(run_id, config, config.log_dir)
+        self.mover = Mover(config, manifest=self.manifest)
 
     def run(self) -> PipelineResult:
         result = PipelineResult(dry_run=self.config.dry_run)
@@ -40,6 +44,7 @@ class Pipeline:
 
         if not media_files:
             logger.info("No files to process.")
+            result.manifest_path = self.manifest.finalize(result)
             return result
 
         # Phase 2: Extract EXIF metadata (dates)
@@ -63,5 +68,8 @@ class Pipeline:
         # Phase 5: Execute file operations
         logger.info("Phase 5/5: Executing file operations...")
         result = self.mover.execute(actions, result)
+
+        # Write JSON manifest
+        result.manifest_path = self.manifest.finalize(result)
 
         return result

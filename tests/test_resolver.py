@@ -17,7 +17,7 @@ def _config(dest: Path, discard: Path) -> CuratorConfig:
         dry_run=False,
         exiftool_batch_size=500,
         verbose=False,
-        log_file=None,
+        log_dir=dest,
     )
 
 

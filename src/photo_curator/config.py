@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import FrozenSet, Optional
+from typing import FrozenSet
 
 PHOTO_EXTENSIONS: FrozenSet[str] = frozenset({
     ".jpg", ".jpeg", ".cr2", ".cr3", ".heic", ".png",
@@ -55,4 +55,4 @@ class CuratorConfig:
     dry_run: bool
     exiftool_batch_size: int
     verbose: bool
-    log_file: Optional[Path]
+    log_dir: Path

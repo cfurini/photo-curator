@@ -25,6 +25,7 @@ requires_exiftool = pytest.mark.skipif(
 
 def _config(
     source, dest, discard, mode="copy", dry_run=False, strategy="filename-size",
+    log_dir=None,
 ) -> CuratorConfig:
     return CuratorConfig(
         source=source,
@@ -35,7 +36,7 @@ def _config(
         dry_run=dry_run,
         exiftool_batch_size=500,
         verbose=False,
-        log_file=None,
+        log_dir=log_dir or dest,
     )
 
 
@@ -53,7 +54,7 @@ def test_pipeline_new_files_no_exif(tmp_path):
     (src / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
     config = _config(src, dest, discard)
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_scanned == 1
     assert result.files_no_date == 1
@@ -73,7 +74,7 @@ def test_pipeline_dry_run_no_writes(tmp_path):
     (src / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
     config = _config(src, dest, discard, dry_run=True)
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_scanned == 1
     assert not (dest / "NoDate" / "photo.jpg").exists()
@@ -97,7 +98,7 @@ def test_pipeline_duplicate_goes_to_discard(tmp_path):
     (dest / "2024" / "01" / "photo.jpg").write_bytes(content)
 
     config = _config(src, dest, discard)
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_discarded == 1
     assert (discard / "photo.jpg").exists()
@@ -117,7 +118,7 @@ def test_pipeline_move_mode_removes_source(tmp_path):
     src_file.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 50)
 
     config = _config(src, dest, discard, mode="move")
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_scanned == 1
     assert not src_file.exists()
@@ -133,7 +134,7 @@ def test_pipeline_empty_source(tmp_path):
     discard.mkdir()
 
     config = _config(src, dest, discard)
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_scanned == 0
     assert result.errors == 0
@@ -157,7 +158,7 @@ def test_pipeline_content_hash_catches_renamed_duplicate(tmp_path):
     (dest / "2024" / "01" / "original.jpg").write_bytes(content)
 
     config = _config(src, dest, discard, strategy="content-hash")
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_discarded == 1
     assert (discard / "renamed_copy.jpg").exists()
@@ -179,7 +180,7 @@ def test_pipeline_content_hash_different_content_not_duplicate(tmp_path):
     (dest / "2024" / "01" / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x01" * 100)
 
     config = _config(src, dest, discard, strategy="content-hash")
-    result = Pipeline(config).run()
+    result = Pipeline(config, "test-run").run()
 
     assert result.files_discarded == 0
     assert result.files_no_date == 1  # new file, no EXIF

@@ -28,7 +28,14 @@ def discard_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def make_config(source_dir, dest_dir, discard_dir):
+def log_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "logs"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture
+def make_config(source_dir, dest_dir, discard_dir, log_dir):
     """Factory fixture for creating CuratorConfig with overrides."""
 
     def _make(**overrides):
@@ -41,7 +48,7 @@ def make_config(source_dir, dest_dir, discard_dir):
             dry_run=False,
             exiftool_batch_size=500,
             verbose=False,
-            log_file=None,
+            log_dir=log_dir,
         )
         defaults.update(overrides)
         return CuratorConfig(**defaults)

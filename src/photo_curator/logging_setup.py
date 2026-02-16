@@ -2,15 +2,18 @@
 
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
-def setup_logging(
-    verbose: bool = False,
-    log_file: Optional[Path] = None,
-) -> None:
-    """Configure the photo_curator logger with console + optional file handler."""
+def setup_logging(verbose: bool = False, log_dir: Path = Path(".")) -> str:
+    """Configure the photo_curator logger with console + timestamped file handler.
+
+    Returns the run_id string (e.g. 'photo-curator_20260216_143022') so the
+    manifest writer can use the same timestamp.
+    """
+    run_id = f"photo-curator_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
     root = logging.getLogger("photo_curator")
     root.setLevel(logging.DEBUG)
 
@@ -22,10 +25,13 @@ def setup_logging(
     ))
     root.addHandler(console)
 
-    if log_file:
-        fh = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s",
-        ))
-        root.addHandler(fh)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"{run_id}.log"
+    fh = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s",
+    ))
+    root.addHandler(fh)
+
+    return run_id

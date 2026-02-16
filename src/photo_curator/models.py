@@ -59,6 +59,18 @@ class FileAction:
 
 
 @dataclass
+class OperationRecord:
+    """One file operation recorded for the JSON manifest."""
+
+    action: str  # "store", "discard", "no_date"
+    source: str  # absolute path as string
+    destination: str  # absolute path as string
+    source_size: int
+    matched_existing: Optional[str] = None
+    sidecars: list[dict[str, str]] = field(default_factory=list)
+
+
+@dataclass
 class PipelineResult:
     """Summary counters for a completed pipeline run."""
 
@@ -69,3 +81,4 @@ class PipelineResult:
     files_no_date: int = 0
     errors: int = 0
     dry_run: bool = False
+    manifest_path: Optional[Path] = None

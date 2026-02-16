@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from photo_curator import __version__
 from photo_curator.config import CuratorConfig, DEFAULT_BATCH_SIZE
 from photo_curator.logging_setup import setup_logging
 from photo_curator.matching.registry import available_strategies
@@ -20,23 +21,63 @@ def build_parser() -> argparse.ArgumentParser:
         prog="photo-curator",
         description="Curate photo and video archives: organize, deduplicate, and discard.",
     )
+    subparsers = parser.add_subparsers(dest="command")
 
+    # --- run subcommand (also the default when no subcommand given) ---
+    run_parser = subparsers.add_parser(
+        "run", help="Run the photo curation pipeline.",
+    )
+    _add_run_args(run_parser)
+    # Also add run args to the top-level parser for backward compat
+    _add_run_args(parser)
+
+    # --- undo subcommand ---
+    undo_parser = subparsers.add_parser(
+        "undo", help="Reverse operations from a previous run using its JSON manifest.",
+    )
+    undo_parser.add_argument(
+        "manifest",
+        type=Path,
+        help="Path to the JSON manifest from a previous run.",
+    )
+    undo_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview undo actions without making changes.",
+    )
+    undo_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose (DEBUG-level) console output.",
+    )
+    undo_parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=None,
+        help="Directory for log files (default: same directory as manifest).",
+    )
+
+    return parser
+
+
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    """Add the run-mode arguments to a parser."""
     parser.add_argument(
         "--source",
         type=Path,
-        required=True,
+        default=None,
         help="Source directory to recursively scan for photos/videos.",
     )
     parser.add_argument(
         "--destination",
         type=Path,
-        required=True,
+        default=None,
         help="Destination archive directory (files organized into YYYY/MM).",
     )
     parser.add_argument(
         "--discard",
         type=Path,
-        required=True,
+        default=None,
         help="Directory for discarded duplicates.",
     )
     parser.add_argument(
@@ -62,10 +103,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable verbose (DEBUG-level) console output.",
     )
     parser.add_argument(
-        "--log-file",
+        "--log-dir",
         type=Path,
         default=None,
-        help="Path to log file (default: photo-curator.log in current directory).",
+        help="Directory for log and manifest files (default: current directory).",
     )
     parser.add_argument(
         "--exiftool-batch-size",
@@ -73,8 +114,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BATCH_SIZE,
         help=f"Number of files per exiftool batch call (default: {DEFAULT_BATCH_SIZE}).",
     )
-
-    return parser
 
 
 def _check_exiftool() -> None:
@@ -91,8 +130,15 @@ def _check_exiftool() -> None:
         raise SystemExit(1)
 
 
-def validate_args(args: argparse.Namespace) -> None:
-    """Validate CLI arguments."""
+def _validate_run_args(args: argparse.Namespace) -> None:
+    """Validate CLI arguments for the run command."""
+    if not args.source:
+        raise SystemExit("Error: --source is required")
+    if not args.destination:
+        raise SystemExit("Error: --destination is required")
+    if not args.discard:
+        raise SystemExit("Error: --discard is required")
+
     if not args.source.is_dir():
         raise SystemExit(f"Error: --source is not a directory: {args.source}")
 
@@ -106,14 +152,12 @@ def validate_args(args: argparse.Namespace) -> None:
     _check_exiftool()
 
 
-def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+def _cmd_run(args: argparse.Namespace) -> None:
+    """Execute the run command."""
+    log_dir = (args.log_dir or Path(".")).resolve()
+    run_id = setup_logging(verbose=args.verbose, log_dir=log_dir)
 
-    log_file = args.log_file or Path("photo-curator.log")
-    setup_logging(verbose=args.verbose, log_file=log_file)
-
-    validate_args(args)
+    _validate_run_args(args)
 
     config = CuratorConfig(
         source=args.source.resolve(),
@@ -124,22 +168,23 @@ def main() -> None:
         dry_run=args.dry_run,
         exiftool_batch_size=args.exiftool_batch_size,
         verbose=args.verbose,
-        log_file=log_file,
+        log_dir=log_dir,
     )
 
     logger.info("=" * 60)
-    logger.info("photo-curator v0.1")
+    logger.info(f"photo-curator v{__version__}")
     logger.info(f"  Source:      {config.source}")
     logger.info(f"  Destination: {config.destination}")
     logger.info(f"  Discard:     {config.discard}")
     logger.info(f"  Mode:        {config.mode}")
     logger.info(f"  Strategy:    {config.match_strategy}")
     logger.info(f"  Dry-run:     {config.dry_run}")
+    logger.info(f"  Log dir:     {config.log_dir}")
     logger.info("=" * 60)
 
     from photo_curator.pipeline import Pipeline
 
-    pipeline = Pipeline(config)
+    pipeline = Pipeline(config, run_id)
     result = pipeline.run()
 
     logger.info("=" * 60)
@@ -152,6 +197,34 @@ def main() -> None:
     logger.info(f"  Errors:    {result.errors}")
     if result.dry_run:
         logger.info("  (DRY-RUN -- no files were changed)")
+    if result.manifest_path:
+        logger.info(f"  Manifest:  {result.manifest_path}")
     logger.info("=" * 60)
 
     raise SystemExit(1 if result.errors > 0 else 0)
+
+
+def _cmd_undo(args: argparse.Namespace) -> None:
+    """Execute the undo command."""
+    log_dir = (args.log_dir or args.manifest.parent).resolve()
+    setup_logging(verbose=args.verbose, log_dir=log_dir)
+
+    from photo_curator.undo import undo
+
+    undo(
+        manifest_path=args.manifest.resolve(),
+        dry_run=args.dry_run,
+        verbose=args.verbose,
+        log_dir=log_dir,
+    )
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.command == "undo":
+        _cmd_undo(args)
+    else:
+        # Default to run (handles both explicit "run" and no subcommand)
+        _cmd_run(args)

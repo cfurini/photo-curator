@@ -3,11 +3,14 @@
 from pathlib import Path
 
 from photo_curator.config import CuratorConfig
+from photo_curator.manifest import ManifestWriter
 from photo_curator.models import Action, FileAction, FileCategory, FileRecord, PipelineResult
 from photo_curator.mover import Mover, resolve_duplicate_name
 
 
-def _config(dest: Path, discard: Path, mode="copy", dry_run=False) -> CuratorConfig:
+def _config(
+    dest: Path, discard: Path, mode="copy", dry_run=False, log_dir=None,
+) -> CuratorConfig:
     return CuratorConfig(
         source=dest,
         destination=dest,
@@ -17,7 +20,7 @@ def _config(dest: Path, discard: Path, mode="copy", dry_run=False) -> CuratorCon
         dry_run=dry_run,
         exiftool_batch_size=500,
         verbose=False,
-        log_file=None,
+        log_dir=log_dir or dest,
     )
 
 
@@ -175,3 +178,65 @@ class TestMover:
 
         result = mover.execute([action], PipelineResult())
         assert result.files_skipped == 1
+
+    def test_manifest_records_store(self, tmp_path):
+        """ManifestWriter should receive a record for each store operation."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        discard_dir = tmp_path / "discard"
+        discard_dir.mkdir()
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+
+        src_file = src_dir / "photo.jpg"
+        src_file.write_bytes(b"\xff\xd8" + b"\x00" * 50)
+
+        config = _config(dest_dir, discard_dir, mode="copy", log_dir=log_dir)
+        manifest = ManifestWriter("test-run", config, log_dir)
+        mover = Mover(config, manifest=manifest)
+
+        dest_path = dest_dir / "2024" / "01" / "photo.jpg"
+        action = FileAction(
+            source=_record(src_file),
+            action=Action.STORE,
+            destination_path=dest_path,
+        )
+
+        mover.execute([action], PipelineResult())
+
+        assert len(manifest.operations) == 1
+        assert manifest.operations[0].action == "store"
+        assert manifest.operations[0].source == str(src_file)
+        assert manifest.operations[0].destination == str(dest_path)
+
+    def test_manifest_records_discard(self, tmp_path):
+        """ManifestWriter should receive a record for discard operations."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        discard_dir = tmp_path / "discard"
+        discard_dir.mkdir()
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+
+        src_file = src_dir / "dup.jpg"
+        src_file.write_bytes(b"\xff\xd8" + b"\x00" * 50)
+
+        config = _config(dest_dir, discard_dir, mode="copy", log_dir=log_dir)
+        manifest = ManifestWriter("test-run", config, log_dir)
+        mover = Mover(config, manifest=manifest)
+
+        discard_path = discard_dir / "dup.jpg"
+        action = FileAction(
+            source=_record(src_file),
+            action=Action.DISCARD_SOURCE,
+            destination_path=discard_path,
+        )
+
+        mover.execute([action], PipelineResult())
+
+        assert len(manifest.operations) == 1
+        assert manifest.operations[0].action == "discard_source"
