@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from photo_curator.models import FileCategory
-from photo_curator.scanner import Scanner
+from photo_curator.scanner import Scanner, walk_destination
 
 
 def test_scan_finds_media_files(make_config, source_dir):
@@ -92,23 +92,27 @@ def test_orphan_sidecar_not_in_map(make_config, source_dir):
     assert len(sidecar_map) == 0
 
 
-def test_index_destination(make_config, dest_dir):
+def test_walk_destination(dest_dir):
     (dest_dir / "2024" / "01").mkdir(parents=True)
     content = b"\xff\xd8" + b"\x00" * 100
     (dest_dir / "2024" / "01" / "IMG_001.jpg").write_bytes(content)
 
-    config = make_config()
-    index = Scanner(config).index_destination()
+    files = walk_destination(dest_dir)
 
-    key = ("img_001.jpg", len(content))
-    assert key in index
-    assert len(index[key]) == 1
+    assert len(files) == 1
+    path, size = files[0]
+    assert path.name == "IMG_001.jpg"
+    assert size == len(content)
 
 
-def test_index_destination_empty(make_config, dest_dir):
-    config = make_config()
-    index = Scanner(config).index_destination()
-    assert index == {}
+def test_walk_destination_empty(dest_dir):
+    files = walk_destination(dest_dir)
+    assert files == []
+
+
+def test_walk_destination_nonexistent(tmp_path):
+    files = walk_destination(tmp_path / "nope")
+    assert files == []
 
 
 def test_scan_ignores_unknown_extensions(make_config, source_dir):

@@ -2,22 +2,32 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 
 from photo_curator.matching.base import MatchStrategy
 from photo_curator.models import FileRecord, MatchResult
+from photo_curator.scanner import walk_destination
 
 # Type alias for the index this strategy expects
 FilenameSizeIndex = dict[tuple[str, int], list[Path]]
 
 
 class FilenameSizeStrategy(MatchStrategy):
-    """v0.1 strategy: a file is a duplicate if an identical filename (case-insensitive)
+    """A file is a duplicate if an identical filename (case-insensitive)
     with the same byte size already exists in the destination archive."""
 
     @property
     def name(self) -> str:
         return "filename-size"
+
+    def build_index(self, destination: Path) -> FilenameSizeIndex:
+        """Index destination by (filename_lower, size)."""
+        index: dict[tuple[str, int], list[Path]] = defaultdict(list)
+        for file_path, size in walk_destination(destination):
+            key = (file_path.name.lower(), size)
+            index[key].append(file_path)
+        return dict(index)
 
     def match_all(
         self,

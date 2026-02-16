@@ -48,7 +48,7 @@ class Pipeline:
 
         # Phase 3: Match against destination archive
         logger.info("Phase 3/5: Matching against destination archive...")
-        dest_index = self.scanner.index_destination()
+        dest_index = self.strategy.build_index(self.config.destination)
         match_results = self.strategy.match_all(file_records, dest_index)
 
         # Phase 4: Resolve conflicts (keep vs discard)

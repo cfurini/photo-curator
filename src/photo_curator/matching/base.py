@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+from pathlib import Path
 from typing import Any
 
 from photo_curator.models import FileRecord, MatchResult
@@ -11,14 +12,20 @@ from photo_curator.models import FileRecord, MatchResult
 class MatchStrategy(abc.ABC):
     """Base class for all matching strategies.
 
-    Each strategy defines how to compare source files against a
-    destination index to detect duplicates.
+    Each strategy defines:
+      - How to build a destination index from file paths
+      - How to compare source files against that index
     """
 
     @property
     @abc.abstractmethod
     def name(self) -> str:
         """Short identifier used by --match-strategy CLI flag."""
+        ...
+
+    @abc.abstractmethod
+    def build_index(self, destination: Path) -> Any:
+        """Scan the destination directory and build a strategy-specific index."""
         ...
 
     @abc.abstractmethod

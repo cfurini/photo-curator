@@ -1,4 +1,4 @@
-"""Recursive file discovery, sidecar mapping, and destination indexing."""
+"""Recursive file discovery, sidecar mapping, and destination walking."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from photo_curator.config import (
+    ALL_EXTENSIONS,
     MEDIA_EXTENSIONS,
     PHOTO_EXTENSIONS,
     SIDECAR_EXTENSIONS,
@@ -109,32 +110,34 @@ class Scanner:
 
         return dict(result)
 
-    def index_destination(self) -> dict[tuple[str, int], list[Path]]:
-        """Build an index of the destination archive for matching.
 
-        Returns:
-            dict of (filename_lower, size) -> list[Path]
-        """
-        index: dict[tuple[str, int], list[Path]] = defaultdict(list)
+def walk_destination(destination: Path) -> list[tuple[Path, int]]:
+    """Walk a destination directory and return all media/sidecar files with sizes.
 
-        if not self.config.destination.exists():
-            return dict(index)
+    Shared helper used by matching strategies to build their indexes.
 
-        for root, dirs, files in os.walk(self.config.destination):
-            dirs[:] = [d for d in dirs if d.lower() not in SKIP_DIRNAMES]
+    Returns:
+        list of (file_path, file_size) tuples
+    """
+    results: list[tuple[Path, int]] = []
 
-            root_path = Path(root)
-            for filename in files:
-                file_path = root_path / filename
-                ext = file_path.suffix.lower()
-                if ext not in MEDIA_EXTENSIONS and ext not in SIDECAR_EXTENSIONS:
-                    continue
+    if not destination.exists():
+        return results
 
-                try:
-                    stat = file_path.stat()
-                    key = (filename.lower(), stat.st_size)
-                    index[key].append(file_path)
-                except OSError:
-                    pass
+    for root, dirs, files in os.walk(destination):
+        dirs[:] = [d for d in dirs if d.lower() not in SKIP_DIRNAMES]
 
-        return dict(index)
+        root_path = Path(root)
+        for filename in files:
+            file_path = root_path / filename
+            ext = file_path.suffix.lower()
+            if ext not in ALL_EXTENSIONS:
+                continue
+
+            try:
+                stat = file_path.stat()
+                results.append((file_path, stat.st_size))
+            except OSError:
+                pass
+
+    return results

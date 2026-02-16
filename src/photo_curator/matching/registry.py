@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from photo_curator.matching.base import MatchStrategy
+from photo_curator.matching.content_hash import ContentHashStrategy
 from photo_curator.matching.filename_size import FilenameSizeStrategy
 
 _STRATEGIES: dict[str, MatchStrategy] = {}
@@ -14,6 +15,7 @@ def _register(strategy: MatchStrategy) -> None:
 
 # Register built-in strategies
 _register(FilenameSizeStrategy())
+_register(ContentHashStrategy())
 
 
 def get_strategy(name: str) -> MatchStrategy:

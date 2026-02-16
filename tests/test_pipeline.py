@@ -23,13 +23,15 @@ requires_exiftool = pytest.mark.skipif(
 )
 
 
-def _config(source, dest, discard, mode="copy", dry_run=False) -> CuratorConfig:
+def _config(
+    source, dest, discard, mode="copy", dry_run=False, strategy="filename-size",
+) -> CuratorConfig:
     return CuratorConfig(
         source=source,
         destination=dest,
         discard=discard,
         mode=mode,
-        match_strategy="filename-size",
+        match_strategy=strategy,
         dry_run=dry_run,
         exiftool_batch_size=500,
         verbose=False,
@@ -135,3 +137,49 @@ def test_pipeline_empty_source(tmp_path):
 
     assert result.files_scanned == 0
     assert result.errors == 0
+
+
+@requires_exiftool
+def test_pipeline_content_hash_catches_renamed_duplicate(tmp_path):
+    """content-hash detects duplicate even when filename differs."""
+    src = tmp_path / "source"
+    src.mkdir()
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    discard = tmp_path / "discard"
+    discard.mkdir()
+
+    content = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
+    # Same content, different names
+    (src / "renamed_copy.jpg").write_bytes(content)
+    (dest / "2024" / "01").mkdir(parents=True)
+    (dest / "2024" / "01" / "original.jpg").write_bytes(content)
+
+    config = _config(src, dest, discard, strategy="content-hash")
+    result = Pipeline(config).run()
+
+    assert result.files_discarded == 1
+    assert (discard / "renamed_copy.jpg").exists()
+
+
+@requires_exiftool
+def test_pipeline_content_hash_different_content_not_duplicate(tmp_path):
+    """content-hash does NOT flag same-named files with different content."""
+    src = tmp_path / "source"
+    src.mkdir()
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    discard = tmp_path / "discard"
+    discard.mkdir()
+
+    # Same name, different content
+    (src / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
+    (dest / "2024" / "01").mkdir(parents=True)
+    (dest / "2024" / "01" / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"\x01" * 100)
+
+    config = _config(src, dest, discard, strategy="content-hash")
+    result = Pipeline(config).run()
+
+    assert result.files_discarded == 0
+    assert result.files_no_date == 1  # new file, no EXIF

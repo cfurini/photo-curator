@@ -1,7 +1,7 @@
 # photo-curator — Master Document
 
 > **Purpose**: Living baseline for the photo-curator product. AI-consumable, human-reviewed.
-> **Version**: 0.1.0 | **Last updated**: 2026-02-16
+> **Version**: 0.2.0 | **Last updated**: 2026-02-16
 
 ---
 
@@ -24,9 +24,9 @@ A CLI tool that ingests photos/videos from a source, organizes them into a date-
 | **Discard** | Directory where duplicate/inferior copies are sent. Nothing is deleted — the human decides when to purge |
 | **Sidecar** | Metadata files (.xmp, .thm, .aae) that travel with their parent media file |
 
-### Business Rules (v0.1)
+### Business Rules
 
-1. **Duplicate detection** uses filename (case-insensitive) + file size. A match means the file already exists in the archive.
+1. **Duplicate detection** supports pluggable strategies. `filename-size` matches by name + byte size. `content-hash` matches by SHA256 of file content (catches renamed duplicates).
 2. **Conflict resolution** is conservative: when a duplicate is found, the archive copy always wins. The source copy goes to discard.
 3. **No data is ever deleted.** Files are either stored, discarded (moved to a safe holding area), or skipped.
 4. **Copy is the default mode.** Move mode (which empties the source) must be explicitly requested.
@@ -67,7 +67,7 @@ photo-curator --source PATH --destination PATH --discard PATH [OPTIONS]
 | Flag | Default | Notes |
 |------|---------|-------|
 | `--mode {copy,move}` | `copy` | Move empties source after run |
-| `--match-strategy` | `filename-size` | Extensible via strategy pattern |
+| `--match-strategy` | `filename-size` | `filename-size` or `content-hash` (extensible) |
 | `--dry-run` | off | Preview without changes |
 | `--verbose` / `-v` | off | DEBUG-level console output |
 | `--log-file PATH` | `photo-curator.log` | |
@@ -87,12 +87,18 @@ photo-curator --source PATH --destination PATH --discard PATH [OPTIONS]
 
 ```
 matching/
-├── base.py              ABC: name property + match_all() method
-├── filename_size.py     v0.1: match by (filename.lower(), file_size)
+├── base.py              ABC: name + build_index() + match_all()
+├── filename_size.py     Match by (filename.lower(), file_size)
+├── content_hash.py      Match by SHA256 of file content
 └── registry.py          Lookup by name; add strategy = 1 file + 1 registry line
 ```
 
-The destination index is built by `Scanner.index_destination()` — currently `dict[(filename_lower, size) → list[Path]]`. Each strategy defines what index shape it needs.
+Each strategy owns its index building via `build_index(destination)`. The pipeline calls `strategy.build_index()` then `strategy.match_all()`. A shared `walk_destination()` helper in `scanner.py` provides the file list that strategies index.
+
+| Strategy | Index key | Catches | Trade-off |
+|----------|-----------|---------|-----------|
+| `filename-size` | `(name.lower(), size)` | Exact copies with same name | Fast; misses renamed files |
+| `content-hash` | SHA256 hex digest | Renamed duplicates, any identical content | Slower; must read every byte |
 
 ### Conflict Resolution Rules
 
@@ -131,23 +137,24 @@ photo-curator/
 │   ├── config.py            CuratorConfig dataclass + extension constants
 │   ├── logging_setup.py     console + file logging
 │   ├── models.py            FileRecord, MatchResult, FileAction, PipelineResult, enums
-│   ├── scanner.py           recursive walk, sidecar mapping, destination indexing
+│   ├── scanner.py           recursive walk, sidecar mapping, walk_destination() helper
 │   ├── metadata.py          exiftool batch calls, date parsing
 │   ├── resolver.py          conflict resolution logic
 │   ├── mover.py             copy/move/dry-run + duplicate name resolution
 │   ├── pipeline.py          orchestrator wiring phases 1–5
 │   └── matching/
-│       ├── base.py          MatchStrategy ABC
+│       ├── base.py          MatchStrategy ABC (name + build_index + match_all)
 │       ├── filename_size.py FilenameSizeStrategy
+│       ├── content_hash.py  ContentHashStrategy (SHA256)
 │       └── registry.py      strategy registry
 └── tests/
     ├── conftest.py          shared fixtures (tmp dirs, config factory)
-    ├── test_scanner.py      10 tests
+    ├── test_scanner.py      11 tests (scan + walk_destination)
     ├── test_metadata.py     10 tests (parse_date edge cases)
-    ├── test_matching.py      9 tests (strategy + registry)
+    ├── test_matching.py     17 tests (filename-size, content-hash, build_index, registry)
     ├── test_resolver.py      4 tests (each resolution rule)
     ├── test_mover.py         8 tests (copy, move, dry-run, discard, skip, name collision)
-    └── test_pipeline.py      5 integration tests (requires exiftool)
+    └── test_pipeline.py      7 integration tests (requires exiftool)
 ```
 
 ### Data Models
@@ -164,32 +171,35 @@ photo-curator/
 cd photo-curator
 python3 -m venv venv && source venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/ -v            # 46 tests, all passing
+pytest tests/ -v            # 57 tests, all passing
 photo-curator --help        # verify CLI
 ```
 
-### Implementation Status (v0.1.0) — Complete
+### Implementation Status (v0.2.0) — Complete
 
-All 12 modules implemented. 46 tests passing. CLI operational with dry-run, copy, and move modes.
+All 13 modules implemented. 57 tests passing. CLI operational with dry-run, copy, move modes, and two matching strategies (filename-size, content-hash).
 
 ---
 
 ## 4. Recommended Next Steps
 
-### Near-term (v0.2)
+### Completed
 
-1. **Hash-based matching strategy** — SHA256 or xxHash of file content. Catches renamed duplicates that filename+size misses. Add `matching/content_hash.py` + register.
-2. **Progress tracking** — JSON checkpoint file for resumability on large archives. Enables safe interruption and restart of multi-hour runs.
-3. **Git init + CLAUDE.md** — Version control the project and add a CLAUDE.md with project conventions.
+- ~~Hash-based matching strategy~~ — `content-hash` (SHA256). Done in v0.2.
+- ~~Git init + CLAUDE.md~~ — Repo at `github.com/cfurini/photo-curator`. Done in v0.2.
 
-### Mid-term (v0.3–v0.4)
+### Near-term (v0.3)
 
-4. **Quality-based conflict resolution** — When a duplicate is found, compare resolution, file format hierarchy (RAW > JPEG), or file size to pick the better copy. Keep the winner in archive, send the loser to discard.
-5. **EXIF-based matching** — Match by camera model + timestamp + dimensions. Catches duplicates across different export names.
-6. **Perceptual hashing** — pHash/dHash via `imagehash` library. Detects near-duplicates (crops, re-encodes, slight edits).
+1. **Progress tracking** — JSON checkpoint file for resumability on large archives. Enables safe interruption and restart of multi-hour runs.
+2. **Quality-based conflict resolution** — When a duplicate is found, compare resolution, file format hierarchy (RAW > JPEG), or file size to pick the better copy. Keep the winner in archive, send the loser to discard.
+
+### Mid-term (v0.4–v0.5)
+
+3. **EXIF-based matching** — Match by camera model + timestamp + dimensions. Catches duplicates across different export names.
+4. **Perceptual hashing** — pHash/dHash via `imagehash` library. Detects near-duplicates (crops, re-encodes, slight edits).
 
 ### Long-term
 
-7. **Parallel exiftool** — `concurrent.futures` to run multiple batches simultaneously for faster metadata extraction on large archives.
-8. **Reporting** — Generate a summary report (JSON/CSV) of all actions taken, for audit and review.
-9. **Integration with Immich/Photoprism** — Notify or sync with a photo management frontend after curation.
+5. **Parallel exiftool** — `concurrent.futures` to run multiple batches simultaneously for faster metadata extraction on large archives.
+6. **Reporting** — Generate a summary report (JSON/CSV) of all actions taken, for audit and review.
+7. **Integration with Immich/Photoprism** — Notify or sync with a photo management frontend after curation.
