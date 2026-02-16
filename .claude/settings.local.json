@@ -6,7 +6,8 @@
       "Bash(pip install:*)",
       "Bash(photo-curator:*)",
       "Bash(pytest:*)",
-      "Bash(git -C /home/cfurini/Proj/photo-archive-manager/photo-curator show --stat HEAD)"
+      "Bash(git -C /home/cfurini/Proj/photo-archive-manager/photo-curator show --stat HEAD)",
+      "Bash(git -C /home/cfurini/Proj/photo-archive-manager/photo-curator push origin main)"
     ]
   }
 }
