@@ -52,5 +52,9 @@ class FilenameSizeStrategy(MatchStrategy):
                     matched_destination=None,
                     is_duplicate=False,
                 ))
+                # Track this source file so later source duplicates are caught
+                if key not in dest_index:
+                    dest_index[key] = []
+                dest_index[key].append(record.path)
 
         return results

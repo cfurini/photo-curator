@@ -141,3 +141,16 @@ def walk_destination(destination: Path) -> list[tuple[Path, int]]:
                 pass
 
     return results
+
+
+def count_media(directory: Path) -> tuple[int, int, int]:
+    """Count media files in a directory tree.
+
+    Returns:
+        (total, photos, videos) counts
+    """
+    files = walk_destination(directory)
+    photos = sum(1 for path, _ in files if path.suffix.lower() in PHOTO_EXTENSIONS)
+    videos = sum(1 for path, _ in files if path.suffix.lower() in VIDEO_EXTENSIONS)
+    total = photos + videos
+    return total, photos, videos

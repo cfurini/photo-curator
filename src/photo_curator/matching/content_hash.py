@@ -89,5 +89,9 @@ class ContentHashStrategy(MatchStrategy):
                     matched_destination=None,
                     is_duplicate=False,
                 ))
+                # Track this source file so later source duplicates are caught
+                if digest not in dest_index:
+                    dest_index[digest] = []
+                dest_index[digest].append(record.path)
 
         return results

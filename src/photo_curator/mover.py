@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -40,12 +41,24 @@ class Mover:
     def execute(
         self, actions: list[FileAction], result: PipelineResult,
     ) -> PipelineResult:
-        for action in actions:
+        total = len(actions)
+        bar_width = 30
+        for i, action in enumerate(actions):
+            pct = (i + 1) * 100 // total
+            filled = bar_width * (i + 1) // total
+            bar = "#" * filled + "." * (bar_width - filled)
+            sys.stdout.write(
+                f"\r  Progress: [{bar}] {pct}% ({i + 1}/{total})"
+            )
+            sys.stdout.flush()
             try:
                 self._execute_one(action, result)
             except Exception as e:
                 logger.error(f"Error processing {action.source.path}: {e}")
                 result.errors += 1
+        if total > 0:
+            sys.stdout.write("\r" + " " * 60 + "\r")
+            sys.stdout.flush()
         return result
 
     def _execute_one(self, fa: FileAction, result: PipelineResult) -> None:
@@ -90,7 +103,7 @@ class Mover:
 
     def _transfer(self, src: Path, dest: Path, prefix: str) -> None:
         """Copy or move a single file."""
-        logger.info(f"{prefix}{self.config.mode.upper()}: {src} -> {dest}")
+        logger.debug(f"{prefix}{self.config.mode.upper()}: {src} -> {dest}")
 
         if self.config.dry_run:
             return

@@ -74,6 +74,23 @@ class TestFilenameSizeStrategy:
         results = strategy.match_all([], {("x.jpg", 1): [Path("/x")]})
         assert results == []
 
+    def test_source_to_source_duplicates(self):
+        """Multiple source files with same name+size: first is new, rest are duplicates."""
+        strategy = FilenameSizeStrategy()
+        source = [
+            _record("photo.jpg", 5000, path=Path("/source/Ana/photo.jpg")),
+            _record("photo.jpg", 5000, path=Path("/source/cicero/photo.jpg")),
+            _record("photo.jpg", 5000, path=Path("/source/Gabriela/photo.jpg")),
+        ]
+        index: dict = {}
+
+        results = strategy.match_all(source, index)
+
+        assert results[0].is_duplicate is False
+        assert results[1].is_duplicate is True
+        assert results[1].matched_destination == Path("/source/Ana/photo.jpg")
+        assert results[2].is_duplicate is True
+
     def test_build_index(self, tmp_path):
         (tmp_path / "2024" / "01").mkdir(parents=True)
         content = b"\xff\xd8" + b"\x00" * 100
@@ -161,6 +178,30 @@ class TestContentHashStrategy:
         results = strategy.match_all(source_records, index)
 
         assert results[0].is_duplicate is False
+
+    def test_source_to_source_duplicates(self, tmp_path):
+        """Multiple source files with same content: first is new, rest are duplicates."""
+        strategy = ContentHashStrategy()
+        content = b"\xff\xd8" + b"\x00" * 100
+
+        src = tmp_path / "source"
+        for folder in ("Ana", "cicero", "Gabriela"):
+            (src / folder).mkdir(parents=True)
+            (src / folder / "photo.jpg").write_bytes(content)
+
+        source_records = [
+            _record("photo.jpg", len(content), path=src / "Ana" / "photo.jpg"),
+            _record("photo.jpg", len(content), path=src / "cicero" / "photo.jpg"),
+            _record("photo.jpg", len(content), path=src / "Gabriela" / "photo.jpg"),
+        ]
+        index: dict = {}
+
+        results = strategy.match_all(source_records, index)
+
+        assert results[0].is_duplicate is False
+        assert results[1].is_duplicate is True
+        assert results[1].matched_destination == src / "Ana" / "photo.jpg"
+        assert results[2].is_duplicate is True
 
     def test_build_index(self, tmp_path):
         (tmp_path / "2024" / "01").mkdir(parents=True)

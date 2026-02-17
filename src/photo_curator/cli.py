@@ -189,16 +189,24 @@ def _cmd_run(args: argparse.Namespace) -> None:
 
     logger.info("=" * 60)
     logger.info("Summary:")
-    logger.info(f"  Scanned:   {result.files_scanned}")
-    logger.info(f"  Stored:    {result.files_stored}")
-    logger.info(f"  Discarded: {result.files_discarded}")
-    logger.info(f"  Skipped:   {result.files_skipped}")
-    logger.info(f"  No date:   {result.files_no_date}")
-    logger.info(f"  Errors:    {result.errors}")
+    logger.info(
+        f"  Source:      {result.files_scanned} files "
+        f"({result.source_photos} photos, {result.source_videos} videos)"
+    )
+    logger.info(
+        f"  Destination: {result.dest_before_total} files before "
+        f"-> {result.dest_after_total} files after "
+        f"({result.dest_after_photos} photos, {result.dest_after_videos} videos)"
+    )
+    logger.info(f"  Stored:      {result.files_stored}")
+    logger.info(f"  Discarded:   {result.files_discarded}")
+    logger.info(f"  Skipped:     {result.files_skipped}")
+    logger.info(f"  No date:     {result.files_no_date}")
+    logger.info(f"  Errors:      {result.errors}")
     if result.dry_run:
         logger.info("  (DRY-RUN -- no files were changed)")
     if result.manifest_path:
-        logger.info(f"  Manifest:  {result.manifest_path}")
+        logger.info(f"  Manifest:    {result.manifest_path}")
     logger.info("=" * 60)
 
     raise SystemExit(1 if result.errors > 0 else 0)

@@ -1,7 +1,7 @@
 # photo-curator — Master Document
 
 > **Purpose**: Living baseline for the photo-curator product. AI-consumable, human-reviewed.
-> **Version**: 0.3.0 | **Last updated**: 2026-02-16
+> **Version**: 0.3.1 | **Last updated**: 2026-02-17
 
 ---
 
@@ -84,8 +84,8 @@ photo-curator --source PATH --destination PATH --discard PATH [OPTIONS]
 2. METADATA     MetadataExtractor.enrich()  → FileRecords with year/month from EXIF
 3. MATCH        Strategy.match_all()        → MatchResults (duplicate or new)
 4. RESOLVE      Resolver.resolve()          → FileActions (store/discard/skip)
-5. EXECUTE      Mover.execute()             → copy or move files, update counters
-6. MANIFEST     ManifestWriter.finalize()   → write JSON operations manifest
+5. EXECUTE      Mover.execute()             → copy or move files, progress bar, update counters
+6. MANIFEST     ManifestWriter.finalize()   → write JSON manifest (skipped in dry-run)
 ```
 
 ### Matching Strategy Pattern
@@ -98,7 +98,7 @@ matching/
 └── registry.py          Lookup by name; add strategy = 1 file + 1 registry line
 ```
 
-Each strategy owns its index building via `build_index(destination)`. The pipeline calls `strategy.build_index()` then `strategy.match_all()`. A shared `walk_destination()` helper in `scanner.py` provides the file list that strategies index.
+Each strategy owns its index building via `build_index(destination)`. The pipeline calls `strategy.build_index()` then `strategy.match_all()`. A shared `walk_destination()` helper in `scanner.py` provides the file list that strategies index. Both strategies also detect **source-to-source duplicates**: as each new file is processed, it is added to the index so subsequent source files with the same key are caught.
 
 | Strategy | Index key | Catches | Trade-off |
 |----------|-----------|---------|-----------|
@@ -156,9 +156,9 @@ photo-curator/
 │       └── registry.py      strategy registry
 └── tests/
     ├── conftest.py          shared fixtures (tmp dirs, config factory)
-    ├── test_scanner.py      11 tests (scan + walk_destination)
+    ├── test_scanner.py      13 tests (scan + walk_destination + count_media)
     ├── test_metadata.py     10 tests (parse_date edge cases)
-    ├── test_matching.py     17 tests (filename-size, content-hash, build_index, registry)
+    ├── test_matching.py     18 tests (filename-size, content-hash, source-to-source dups, build_index, registry)
     ├── test_resolver.py      4 tests (each resolution rule)
     ├── test_mover.py        10 tests (copy, move, dry-run, discard, skip, name collision, manifest)
     ├── test_manifest.py      7 tests (ManifestWriter: write, record, config, summary, sidecars)
@@ -172,7 +172,7 @@ photo-curator/
 **MatchResult** (frozen): `source`, `matched_destination`, `is_duplicate`
 **FileAction** (mutable): `source`, `action`, `destination_path`, `sidecars`, `reason`
 **OperationRecord** (mutable): `action`, `source`, `destination`, `source_size`, `matched_existing`, `sidecars`
-**PipelineResult** (mutable): `files_scanned`, `files_stored`, `files_discarded`, `files_skipped`, `files_no_date`, `errors`, `dry_run`, `manifest_path`
+**PipelineResult** (mutable): `files_scanned`, `files_stored`, `files_discarded`, `files_skipped`, `files_no_date`, `errors`, `dry_run`, `manifest_path`, `source_photos`, `source_videos`, `dest_before_total`, `dest_before_photos`, `dest_before_videos`, `dest_after_total`, `dest_after_photos`, `dest_after_videos`
 **CuratorConfig** (frozen): `source`, `destination`, `discard`, `mode`, `match_strategy`, `dry_run`, `exiftool_batch_size`, `verbose`, `log_dir`
 
 ### Build & Test
@@ -181,13 +181,13 @@ photo-curator/
 cd photo-curator
 python3 -m venv venv && source venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/ -v            # 75+ tests, all passing
+pytest tests/ -v            # 83 tests, all passing
 photo-curator --help        # verify CLI
 ```
 
-### Implementation Status (v0.3.0) — Complete
+### Implementation Status (v0.3.1) — Complete
 
-All 16 modules implemented. 75+ tests passing. CLI operational with dry-run, copy, move modes, two matching strategies (filename-size, content-hash), structured JSON manifest output, and undo capability.
+All 16 modules implemented. 83 tests passing. CLI operational with dry-run, copy, move modes, two matching strategies (filename-size, content-hash), structured JSON manifest output (skipped in dry-run), undo capability, source-to-source duplicate detection, single-line progress bar, and before/after destination inventory in summary.
 
 ---
 
@@ -198,6 +198,8 @@ All 16 modules implemented. 75+ tests passing. CLI operational with dry-run, cop
 - ~~Hash-based matching strategy~~ — `content-hash` (SHA256). Done in v0.2.
 - ~~Git init + CLAUDE.md~~ — Repo at `github.com/cfurini/photo-curator`. Done in v0.2.
 - ~~Structured logging + undo~~ — Timestamped `.log` + `.json` manifest per run. `undo` subcommand reverses operations. `--log-dir` CLI option. Done in v0.3.
+- ~~Source-to-source duplicate detection~~ — Both strategies now detect duplicates within the source batch, not only against the destination. Done in v0.3.1.
+- ~~Console output improvements~~ — Single-line progress bar during Phase 5 (overwrites in place). Before/after destination inventory in summary. Per-file actions moved to DEBUG. JSON manifest skipped in dry-run. Done in v0.3.1.
 
 ### Near-term (v0.4)
 

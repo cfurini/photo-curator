@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from photo_curator.models import FileCategory
-from photo_curator.scanner import Scanner, walk_destination
+from photo_curator.scanner import Scanner, count_media, walk_destination
 
 
 def test_scan_finds_media_files(make_config, source_dir):
@@ -113,6 +113,27 @@ def test_walk_destination_empty(dest_dir):
 def test_walk_destination_nonexistent(tmp_path):
     files = walk_destination(tmp_path / "nope")
     assert files == []
+
+
+def test_count_media(tmp_path):
+    (tmp_path / "2024" / "01").mkdir(parents=True)
+    (tmp_path / "2024" / "01" / "photo.jpg").write_bytes(b"\x00" * 10)
+    (tmp_path / "2024" / "01" / "photo2.png").write_bytes(b"\x00" * 10)
+    (tmp_path / "2024" / "01" / "clip.mp4").write_bytes(b"\x00" * 10)
+    (tmp_path / "2024" / "01" / "sidecar.xmp").write_text("<xmp/>")
+
+    total, photos, videos = count_media(tmp_path)
+
+    assert total == 3
+    assert photos == 2
+    assert videos == 1
+
+
+def test_count_media_empty(tmp_path):
+    total, photos, videos = count_media(tmp_path)
+    assert total == 0
+    assert photos == 0
+    assert videos == 0
 
 
 def test_scan_ignores_unknown_extensions(make_config, source_dir):

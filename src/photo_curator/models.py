@@ -82,3 +82,11 @@ class PipelineResult:
     errors: int = 0
     dry_run: bool = False
     manifest_path: Optional[Path] = None
+    source_photos: int = 0
+    source_videos: int = 0
+    dest_before_total: int = 0
+    dest_before_photos: int = 0
+    dest_before_videos: int = 0
+    dest_after_total: int = 0
+    dest_after_photos: int = 0
+    dest_after_videos: int = 0

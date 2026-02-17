@@ -12,7 +12,7 @@ from photo_curator.metadata import MetadataExtractor
 from photo_curator.models import PipelineResult
 from photo_curator.mover import Mover
 from photo_curator.resolver import Resolver
-from photo_curator.scanner import Scanner
+from photo_curator.scanner import Scanner, count_media
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,10 @@ class Pipeline:
         self.metadata = MetadataExtractor(batch_size=config.exiftool_batch_size)
         self.strategy = get_strategy(config.match_strategy)
         self.resolver = Resolver(config)
-        self.manifest = ManifestWriter(run_id, config, config.log_dir)
+        if config.dry_run:
+            self.manifest = None
+        else:
+            self.manifest = ManifestWriter(run_id, config, config.log_dir)
         self.mover = Mover(config, manifest=self.manifest)
 
     def run(self) -> PipelineResult:
@@ -37,14 +40,22 @@ class Pipeline:
         logger.info("Phase 1/5: Scanning source directory...")
         media_files, sidecar_map = self.scanner.scan()
         result.files_scanned = len(media_files)
+        result.source_photos = sum(
+            1 for f in media_files if f.category.value == "photo"
+        )
+        result.source_videos = sum(
+            1 for f in media_files if f.category.value == "video"
+        )
         logger.info(
-            f"  Found {len(media_files)} media files, "
+            f"  Found {len(media_files)} media files "
+            f"({result.source_photos} photos, {result.source_videos} videos), "
             f"{sum(len(v) for v in sidecar_map.values())} sidecars"
         )
 
         if not media_files:
             logger.info("No files to process.")
-            result.manifest_path = self.manifest.finalize(result)
+            if self.manifest is not None:
+                result.manifest_path = self.manifest.finalize(result)
             return result
 
         # Phase 2: Extract EXIF metadata (dates)
@@ -65,11 +76,24 @@ class Pipeline:
             sidecars = sidecar_map.get(action.source.path, [])
             action.sidecars = sidecars
 
+        # Snapshot destination before execution
+        dt, dp, dv = count_media(self.config.destination)
+        result.dest_before_total = dt
+        result.dest_before_photos = dp
+        result.dest_before_videos = dv
+
         # Phase 5: Execute file operations
         logger.info("Phase 5/5: Executing file operations...")
         result = self.mover.execute(actions, result)
 
+        # Snapshot destination after execution
+        dt, dp, dv = count_media(self.config.destination)
+        result.dest_after_total = dt
+        result.dest_after_photos = dp
+        result.dest_after_videos = dv
+
         # Write JSON manifest
-        result.manifest_path = self.manifest.finalize(result)
+        if self.manifest is not None:
+            result.manifest_path = self.manifest.finalize(result)
 
         return result
